@@ -5,6 +5,7 @@ counter = 1;
 let clients = {};
 
 const KB1024 = 1024*1024;
+const ACCEPTABLE_ENCODING = ['utf8', 'binary', 'ascii', 'utf16le', 'base64', 'latin1', 'hex'];
 
 // Start a TCP Server
 net.createServer(function (socket) {
@@ -48,16 +49,23 @@ net.createServer(function (socket) {
 
             let relay_message = data.split(' ');
             if(relay_message.length < 3) {
-                socket.write('Invalid relay message. Example format: relay 2,3,4 thisisateststring');
+                socket.write('Invalid relay message. Example format: relay 2,3,4 utf8 55,76,46,26');
                 return;
             }
             let ids = relay_message[1].split(',').map(val => parseInt(val)).filter(val => !isNaN(val));
-            let body = relay_message[2];
+
+            const encoding = relay_message[2]
+            
+            let body_bytes = relay_message[3].split(',');
+
+            //Converting body to buffer
+            const buffer = Buffer.from(body_bytes.map(val => parseInt(val)));
 
             //Validate
-            output = _validate(ids, body);
+            const output = _validate(ids, buffer, encoding);
 
             if(output.success) {
+                const body = _decode(encoding, buffer);
                 _relay(ids, body); //send relay
                 socket.write('Relay message sent successfully');
             } else {
@@ -71,19 +79,32 @@ net.createServer(function (socket) {
         delete clients[socket.id];
     });
 
-    function _validate(ids, body) {
+    function _decode(encoding, buffer) {
+        return buffer.toString(encoding);
+    }
+
+    function _validate(ids, buffer, encoding) {
         if(ids.length > 255) {
             return {
                 success: false,
                 reason: 'You can send message to 255 clients at once only'
             }
-        }
-        if(body.length > KB1024) {
+        }        
+
+        if(buffer.length > KB1024) {
             return {
                 success: false,
                 reason: 'Body can have max 1024 KB of data only'
             }
         }
+
+        if(!ACCEPTABLE_ENCODING.includes(encoding)) {
+            return {
+                success: false,
+                reason: 'Invalid encoding. Acceptable values: ' + ACCEPTABLE_ENCODING.join(' ')
+            }
+        }
+
         return {
             success: true
         }
